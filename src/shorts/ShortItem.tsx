@@ -3,6 +3,14 @@ import { ActionBtn } from "./ActionButton";
 import { incrementLabel } from "./utils";
 import type { FastPixPlayerElement, ShortMeta } from "./types";
 
+type TrackInfo = {
+  id: number;
+  label: string;
+  language?: string;
+  isDefault: boolean;
+  isCurrent: boolean;
+};
+
 export type ShortItemProps = {
   playbackId: string;
   metadata: ShortMeta;
@@ -15,6 +23,7 @@ export type ShortItemProps = {
   onScrollPrev: () => void;
   onScrollNext: () => void;
   onShare: (playbackId: string, metadata: ShortMeta) => void;
+  isActive: boolean;
 };
 
 export const ShortItem: React.FC<ShortItemProps> = ({
@@ -29,6 +38,7 @@ export const ShortItem: React.FC<ShortItemProps> = ({
   onScrollPrev,
   onScrollNext,
   onShare,
+  isActive,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<FastPixPlayerElement | null>(null);
@@ -38,6 +48,10 @@ export const ShortItem: React.FC<ShortItemProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [accentColor, setAccentColor] = useState("#5D09C7");
+  const [audioTracks, setAudioTracks] = useState<TrackInfo[]>([]);
+  const [subtitleTracks, setSubtitleTracks] = useState<TrackInfo[]>([]);
+  const [showTrackMenu, setShowTrackMenu] = useState(false);
+  const [subtitleText, setSubtitleText] = useState("");
 
   useEffect(() => {
     const container = containerRef.current;
@@ -52,6 +66,10 @@ export const ShortItem: React.FC<ShortItemProps> = ({
     el.setAttribute("loop", "");
     el.setAttribute("disable-keyboard-controls", "");
     el.setAttribute("preload", preload);
+    // Mirror demo behavior: keep native subtitles hidden and, optionally,
+    // start with subtitles Off while still emitting fastpixsubtitlecue.
+    el.setAttribute("hide-native-subtitles", "");
+    // el.setAttribute("disable-hidden-captions", "");
     el.style.width = "100%";
     el.style.height = "100%";
     el.style.objectFit = "cover";
@@ -115,6 +133,41 @@ export const ShortItem: React.FC<ShortItemProps> = ({
       vid.removeEventListener("pause", onPause);
     };
   }, [playbackId]);
+
+  // Log fastpixsubtitlecue and keep a styled overlay in sync — only for the active short
+  useEffect(() => {
+    const player = playerRef.current as any;
+    if (!player || !isActive) {
+      // If this short is not active, clear any old text and skip attaching.
+      setSubtitleText("");
+      return;
+    }
+
+    const handleCue = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail || {};
+      const text: string = detail.text ?? "";
+      const lang: string | undefined = detail.language;
+      const startTime: number | undefined = detail.startTime;
+      const endTime: number | undefined = detail.endTime;
+
+      // Helpful log for debugging / QA
+      // eslint-disable-next-line no-console
+      console.log("[fastpixsubtitlecue]", {
+        text,
+        language: lang,
+        startTime,
+        endTime,
+        playbackId,
+      });
+
+      setSubtitleText(text || "");
+    };
+
+    player.addEventListener("fastpixsubtitlecue", handleCue as any);
+    return () => {
+      player.removeEventListener("fastpixsubtitlecue", handleCue as any);
+    };
+  }, [playbackId, isActive]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -183,6 +236,84 @@ export const ShortItem: React.FC<ShortItemProps> = ({
       vid.removeEventListener("seeked", paint);
     };
   }, []);
+
+  // Track switching: read available tracks and keep state in sync with FastPix events.
+  useEffect(() => {
+    const player = playerRef.current as any;
+    if (!player) return;
+
+    const handleTracksReady = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail || {};
+      const aud: TrackInfo[] =
+        detail.audioTracks ??
+        (typeof player.getAudioTracks === "function" ? player.getAudioTracks() : []);
+      const subs: TrackInfo[] =
+        detail.subtitleTracks ??
+        (typeof player.getSubtitleTracks === "function"
+          ? player.getSubtitleTracks()
+          : []);
+
+      setAudioTracks(Array.isArray(aud) ? aud : []);
+      setSubtitleTracks(Array.isArray(subs) ? subs : []);
+    };
+
+    const handleAudioChange = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail || {};
+      const tracks: TrackInfo[] =
+        detail.tracks ??
+        (typeof player.getAudioTracks === "function" ? player.getAudioTracks() : []);
+      setAudioTracks(Array.isArray(tracks) ? tracks : []);
+    };
+
+    const handleSubtitleChange = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail || {};
+      const tracks: TrackInfo[] =
+        detail.tracks ??
+        (typeof player.getSubtitleTracks === "function"
+          ? player.getSubtitleTracks()
+          : []);
+      setSubtitleTracks(Array.isArray(tracks) ? tracks : []);
+    };
+
+    player.addEventListener("fastpixtracksready", handleTracksReady as any);
+    player.addEventListener("fastpixaudiochange", handleAudioChange as any);
+    player.addEventListener("fastpixsubtitlechange", handleSubtitleChange as any);
+
+    // Initial snapshot in case events fired before React effect attached.
+    if (typeof player.getAudioTracks === "function") {
+      const aud = player.getAudioTracks();
+      if (Array.isArray(aud) && aud.length) setAudioTracks(aud);
+    }
+    if (typeof player.getSubtitleTracks === "function") {
+      const subs = player.getSubtitleTracks();
+      if (Array.isArray(subs) && subs.length) setSubtitleTracks(subs);
+    }
+
+    return () => {
+      player.removeEventListener("fastpixtracksready", handleTracksReady as any);
+      player.removeEventListener("fastpixaudiochange", handleAudioChange as any);
+      player.removeEventListener(
+        "fastpixsubtitlechange",
+        handleSubtitleChange as any,
+      );
+    };
+  }, [playbackId]);
+
+  const hasAudioChoices = audioTracks.length > 1;
+  const hasSubtitles = subtitleTracks.length > 0;
+  const currentSubtitle = subtitleTracks.find((t) => t.isCurrent) ?? null;
+
+  const switchAudio = (label: string) => {
+    const player = playerRef.current as any;
+    if (!player?.setAudioTrack) return;
+    player.setAudioTrack(label);
+  };
+
+  const switchSubtitle = (labelOrNull: string | null) => {
+    const player = playerRef.current as any;
+    if (!player?.setSubtitleTrack) return;
+    player.setSubtitleTrack(labelOrNull);
+  };
 
   const likeCount = liked
     ? incrementLabel(metadata.likes)
@@ -327,7 +458,12 @@ export const ShortItem: React.FC<ShortItemProps> = ({
             </button>
           </div>
           <div
-            style={{ display: "flex", alignItems: "center", pointerEvents: "auto" }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              pointerEvents: "auto",
+            }}
           >
             <button
               type="button"
@@ -356,6 +492,169 @@ export const ShortItem: React.FC<ShortItemProps> = ({
                 <line x1="3" y1="21" x2="10" y2="14" />
               </svg>
             </button>
+
+            {(hasAudioChoices || hasSubtitles) && (
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowTrackMenu((v) => !v);
+                  }}
+                  aria-label="Track settings"
+                  style={topBarBtnStyle}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    stroke="none"
+                  >
+                    <circle cx="5" cy="12" r="1.6" />
+                    <circle cx="12" cy="12" r="1.6" />
+                    <circle cx="19" cy="12" r="1.6" />
+                  </svg>
+                </button>
+                {showTrackMenu && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 48,
+                      right: 0,
+                      minWidth: 180,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      background: "rgba(0,0,0,0.85)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      boxShadow: "0 8px 16px rgba(0,0,0,0.6)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      pointerEvents: "auto",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {hasAudioChoices && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            color: "rgba(255,255,255,0.6)",
+                          }}
+                        >
+                          Audio
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 4,
+                          }}
+                        >
+                          {audioTracks.map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                switchAudio(t.label);
+                                setShowTrackMenu(false);
+                              }}
+                              style={{
+                                padding: "3px 6px",
+                                borderRadius: 8,
+                                border: t.isCurrent
+                                  ? "2px solid rgba(255,255,255,0.9)"
+                                  : "1px solid rgba(255,255,255,0.4)",
+                                background: t.isCurrent
+                                  ? "rgba(255,255,255,0.12)"
+                                  : "transparent",
+                                color: "#fff",
+                                fontSize: 11,
+                              }}
+                            >
+                              {t.label}
+                              {t.language ? ` (${t.language})` : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {hasSubtitles && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            color: "rgba(255,255,255,0.6)",
+                            marginTop: hasAudioChoices ? 4 : 0,
+                          }}
+                        >
+                          Subtitles
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 4,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              switchSubtitle(null);
+                              setShowTrackMenu(false);
+                            }}
+                            style={{
+                              padding: "3px 6px",
+                              borderRadius: 8,
+                              border: currentSubtitle
+                                ? "1px solid rgba(255,255,255,0.4)"
+                                : "2px solid rgba(255,255,255,0.9)",
+                              background: currentSubtitle
+                                ? "transparent"
+                                : "rgba(255,255,255,0.12)",
+                              color: "#fff",
+                              fontSize: 11,
+                            }}
+                          >
+                            Off
+                          </button>
+                          {subtitleTracks.map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                switchSubtitle(t.label);
+                                setShowTrackMenu(false);
+                              }}
+                              style={{
+                                padding: "3px 6px",
+                                borderRadius: 8,
+                                border: t.isCurrent
+                                  ? "2px solid rgba(255,255,255,0.9)"
+                                  : "1px solid rgba(255,255,255,0.4)",
+                                background: t.isCurrent
+                                  ? "rgba(255,255,255,0.12)"
+                                  : "transparent",
+                                color: "#fff",
+                                fontSize: 11,
+                              }}
+                            >
+                              {t.label}
+                              {t.language ? ` (${t.language})` : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -449,6 +748,31 @@ export const ShortItem: React.FC<ShortItemProps> = ({
             {metadata.title}
           </p>
         </div>
+
+        {/* Custom subtitle overlay driven by fastpixsubtitlecue */}
+        {subtitleText && (
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              bottom: "100px",
+              transform: "translateX(-50%)",
+              maxWidth: "80%",
+              padding: "6px 12px",
+              borderRadius: 10,
+              background: "rgba(0, 0, 0, 0.75)",
+              color: "#fff",
+              fontSize: 14,
+              lineHeight: 1.4,
+              textAlign: "center",
+              pointerEvents: "none",
+              zIndex: 3,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.6)",
+            }}
+          >
+            {subtitleText}
+          </div>
+        )}
 
         {/* Progress bar */}
         <div
@@ -559,4 +883,3 @@ export const ShortItem: React.FC<ShortItemProps> = ({
     </div>
   );
 };
-

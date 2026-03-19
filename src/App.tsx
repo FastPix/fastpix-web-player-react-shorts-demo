@@ -8,6 +8,8 @@ import {
 } from "./shorts/types";
 import { ShortItem } from "./shorts/ShortItem";
 
+const APP_START_MS = performance.now();
+
 const WHEEL_IDLE_MS     = 160;
 
 // ── ShortsApp ─────────────────────────────────────────────────────────────────
@@ -31,6 +33,9 @@ export default function ShortsApp() {
   // We never block or intercept touch. CSS scroll-snap does all the snapping.
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const loggedFirstPlayRef = useRef(false);
+  const lastPlayIndexRef = useRef<number | null>(null);
+
   activeIndexRef.current = activeIndex;
   isMutedRef.current      = isMuted;
 
@@ -48,8 +53,11 @@ export default function ShortsApp() {
   );
 
   const playAt = useCallback(
-    (index: number, options: { resetTime?: boolean } = {}) => {
-      const { resetTime = true } = options;
+    (index: number, options: { resetTime?: boolean; force?: boolean } = {}) => {
+      const { resetTime = true, force = false } = options;
+
+      // Avoid re-triggering play for the same index unless explicitly forced.
+      if (!force && lastPlayIndexRef.current === index) return;
       Object.entries(playerRefsByIndex.current).forEach(([i, p]) => {
         const playerEl = p;
         if (!playerEl) return;
@@ -58,8 +66,8 @@ export default function ShortsApp() {
           playerEl.pause?.();
         }
       });
-    const player = playerRefsByIndex.current[index];
-    if (!player) return;
+      const player = playerRefsByIndex.current[index];
+      if (!player) return;
     if (resetTime && player.video) player.video.currentTime = 0;
     // Before any user gesture: keep muted (autoplay policy). After: use user's current mute preference (persists across swipes).
       if (!hasUserInteractedRef.current) {
@@ -76,6 +84,21 @@ export default function ShortsApp() {
           });
         });
       }
+
+      if (!loggedFirstPlayRef.current) {
+        loggedFirstPlayRef.current = true;
+        const now = performance.now();
+        // eslint-disable-next-line no-console
+        console.log(
+          "[perf] First short started playing:",
+          (now - APP_START_MS).toFixed(1),
+          "ms since load (index",
+          index,
+          ")",
+        );
+      }
+
+      lastPlayIndexRef.current = index;
     },
     [],
   );
@@ -214,6 +237,15 @@ export default function ShortsApp() {
 
   // ── Effects ───────────────────────────────────────────────────────────────────
   useEffect(() => {
+    const now = performance.now();
+    // eslint-disable-next-line no-console
+    console.log(
+      "[perf] ShortsApp first render:",
+      (now - APP_START_MS).toFixed(1),
+      "ms since load",
+    );
+  }, []);
+  useEffect(() => {
     const fn = () => {
       const el = scrollRef.current;
       if (el) el.scrollTop = activeIndexRef.current * window.innerHeight;
@@ -265,43 +297,70 @@ export default function ShortsApp() {
       `}</style>
 
       <div style={{ position: "relative", width: "min(100vw, 56.25vh)", height: "100dvh" }}>
-      <div
-        ref={scrollRef}
+        <div
+          ref={scrollRef}
           className="shorts-scroll"
           onClick={handleContainerClick}
-        style={{
+          style={{
             width: "100%",
             height: "100%",
             overflowY: "scroll",
-          overflowX: "hidden",
+            overflowX: "hidden",
             // CSS scroll-snap — handles ALL touch snapping natively.
             // scrollSnapStop: "always" on each item prevents skip-through.
-          scrollSnapType: "y mandatory",
+            scrollSnapType: "y mandatory",
             // No scrollBehavior here — we set it per-operation (smooth for wheel,
             // instant for init). Touch uses native physics automatically.
-        }}
-      >
-          <div style={{ height: `${SHORTS_FEED.length * 100}vh` }}>
-            {SHORTS_FEED.map((short, i) => (
-        <ShortItem
-                key={short.id}
-                playbackId={short.id}
-                metadata={short}
-                itemIndex={i}
-                preload={
-                  i === activeIndex ? "auto"
-                  : i === activeIndex + 1 || i === activeIndex - 1 ? "metadata"
-                  : "none"
-                }
-                registerPlayer={registerPlayer}
-                onToggleMute={handleMuteToggle}
-                isMuted={isMuted}
-                onRequestFullscreen={handleRequestFullscreen}
-                onScrollPrev={handleScrollPrev}
-                onScrollNext={handleScrollNext}
-                onShare={handleShare}
-        />
-      ))}
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              height: `${SHORTS_FEED.length * 100}vh`,
+            }}
+          >
+            {(() => {
+              const WINDOW = 2; // current ±2
+              const start = Math.max(0, activeIndex - WINDOW);
+              const end = Math.min(SHORTS_FEED.length - 1, activeIndex + WINDOW);
+
+              return SHORTS_FEED.slice(start, end + 1).map((short, idx) => {
+                const i = start + idx;
+                return (
+                  <div
+                    key={short.id}
+                    style={{
+                      position: "absolute",
+                      top: `${i * 100}vh`,
+                      left: 0,
+                      right: 0,
+                      height: "100vh",
+                    }}
+                  >
+                    <ShortItem
+                      playbackId={short.id}
+                      metadata={short}
+                      itemIndex={i}
+                      preload={
+                        i === activeIndex
+                          ? "auto"
+                          : i === activeIndex + 1 || i === activeIndex - 1
+                          ? "metadata"
+                          : "none"
+                      }
+                      registerPlayer={registerPlayer}
+                      onToggleMute={handleMuteToggle}
+                      isMuted={isMuted}
+                      onRequestFullscreen={handleRequestFullscreen}
+                      onScrollPrev={handleScrollPrev}
+                      onScrollNext={handleScrollNext}
+                      onShare={handleShare}
+                      isActive={i === activeIndex}
+                    />
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
 

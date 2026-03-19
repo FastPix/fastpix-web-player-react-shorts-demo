@@ -19,36 +19,37 @@ export interface FastPixPlayerElement extends HTMLElement {
 // Demo feed – replace with real API data in your app.
 export const SHORTS_FEED: ShortMeta[] = [
   {
-    id: "YOUR_PLAYBACK_ID_VERTICAL_VIDEO_1",
-    creator: "CREATOR_NAME_1",
-    title: "TITLE_OF_VERTICAL_VIDEO_1",
+    id: "e089311f-e6a5-48fa-ac92-3bbe3fec31eb",
+    creator: "telugubeats",
+    title: "Ragili Chedipotnunna 🎵",
     likes: "12.4K",
     comments: "342",
     shares: "891",
   },
   {
-    id: "YOUR_PLAYBACK_ID_VERTICAL_VIDEO_2",
-    creator: "CREATOR_NAME_2",
-    title: "TITLE_OF_VERTICAL_VIDEO_2",
+    id: "2125094c-db43-4748-90e1-18539f2ccf98",
+    creator: "tollywood_edits",
+    title: "Mahaan Beats 🔥 | Best Telugu BGM",
     likes: "8.7K",
     comments: "201",
     shares: "543",
   },
   {
-    id: "YOUR_PLAYBACK_ID_VERTICAL_VIDEO_3",
-    creator: "CREATOR_NAME_3",
-    title: "TITLE_OF_VERTICAL_VIDEO_3",
+    id: "55f36f6a-91fe-439e-8993-04619136299d",
+    creator: "prima_music",
+    title: "Telugu Prima 🎶 | Feel the vibe",
     likes: "21K",
     comments: "987",
     shares: "2.1K",
   },
   {
-    id: "YOUR_PLAYBACK_ID_VERTICAL_VIDEO_4",
-    creator: "CREATOR_NAME_4",
-    title: "TITLE_OF_VERTICAL_VIDEO_4",
+    id: "c655164e-2f08-47d5-a3eb-4e3bf2d444df",
+    creator: "helu_tunes",
+    title: "Helu Vibes 💫 | Trending Now",
     likes: "5.3K",
     comments: "118",
     shares: "310",
   },
+ 
 ];
 

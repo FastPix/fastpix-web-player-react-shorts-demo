@@ -1,8 +1,10 @@
 # FastPix Shorts Demo – React 19 + ESM
 
-This `react-shorts-app` project is a **shorts-style demo** that shows how to use the web-based FastPix player in a React 19 app, using the ESM build of `@fastpix/fp-player`.
+This `react-shorts-app` project is a **shorts-style demo** that shows how to use the web-based FastPix player in a React 19 app.
 
-This demo is built and tested against **`@fastpix/fp-player` version `1.0.12`**.
+**Player bundle:** `src/App.tsx` imports the built player from the parent repo (`../../../dist/player.js`). That keeps the demo aligned with your local FastPix build (including track APIs and attributes like `hide-native-subtitles`). You can swap this for `@fastpix/fp-player` from npm if you pin a version that supports the same APIs.
+
+`package.json` still lists **`@fastpix/fp-player`** for reference; ensure the runtime bundle you load matches the features you document (audio/subtitle switching, `fastpixsubtitlecue`, etc.).
 
 
 ## Prerequisites
@@ -59,8 +61,8 @@ So once you wire your own JSON feed into `SHORTS_FEED` (or fetch it and pass it 
 Clone the repo and run the demo locally:
 
 ```bash
-# from the root of the web-player repo
-cd fastpix-web-player-react-shorts-demo/react-shorts-app
+# from the web-player repo root
+cd react-app-publish/fastpix-web-player-react-shorts-demo
 
 npm install
 npm run dev
@@ -186,6 +188,101 @@ We also use `playerRef.current.video` for:
 - **Preload behavior**: setting `video.preload` based on whether the short is active / adjacent.
 
 This keeps **visual progress and preloading** under app control while the streaming logic stays in FastPix.
+
+---
+
+## Audio & subtitle tracks (this demo)
+
+The shorts demo wires **multi-track audio** and **subtitle / caption** switching on top of the FastPix web component. It uses the same ideas as the standalone HTML demo and the project’s `AUDIO_SUBTITLE_TRACKS_API.md` (methods, events, attributes).
+
+### Player attributes used in `ShortItem.tsx`
+
+| Attribute | Purpose |
+|-----------|--------|
+| **`hide-native-subtitles`** | Keeps the player’s **internal** `subtitleContainer` from showing text. **`fastpixsubtitlecue` still fires** so your React overlay can render captions. Use this when you want **only** your custom subtitle UI. |
+| **`disable-hidden-captions`** *(optional)* | On load, subtitles start **Off** (no automatic showing). After that, the user or your code can enable a track via the built-in CC menu or `setSubtitleTrack(...)`. |
+| **`default-audio-track`** *(optional)* | Initial audio track by **label** (case-insensitive), e.g. `"French"`. Must match a track name from the HLS manifest. |
+| **`default-subtitle-track`** *(optional)* | Initial subtitle track by **label** (case-insensitive). Only applies when subtitles are allowed to show (not when you force everything Off with `disable-hidden-captions` on load). |
+
+Example (conceptual — in this repo the element is created in `useEffect`; attributes are the same as JSX):
+
+```ts
+el.setAttribute("playback-id", playbackId);
+el.setAttribute("autoplay-shorts", "");
+el.setAttribute("muted", "");
+el.setAttribute("loop", "");
+el.setAttribute("disable-keyboard-controls", "");
+el.setAttribute("preload", preload);
+el.setAttribute("hide-native-subtitles", "");
+// Optional:
+// el.setAttribute("disable-hidden-captions", "");
+// el.setAttribute("default-audio-track", "French");
+// el.setAttribute("default-subtitle-track", "English");
+```
+
+### Programmatic API (on the custom element)
+
+After the manifest / text tracks are ready, you can call:
+
+| Method | Description |
+|--------|-------------|
+| `getAudioTracks()` | Snapshot of audio `TrackInfo[]` (de-duped by label). |
+| `setAudioTrack(label)` | Switch audio by **label** (string only; not numeric id). |
+| `getSubtitleTracks()` | Snapshot of subtitle/caption tracks. |
+| `setSubtitleTrack(label \| null)` | Enable a track by **label**, or `null` for **Off**. |
+| `disableSubtitles()` | Same idea as choosing **Off** in the built-in menu (when available). |
+
+`TrackInfo` objects include `id`, `label`, optional `language`, `isDefault`, `isCurrent`. Prefer **`label`** for `setAudioTrack` / `setSubtitleTrack`; use **`language`** for persisting user preference across assets.
+
+### Events
+
+| Event | When | Typical use |
+|-------|------|-------------|
+| **`fastpixtracksready`** | After HLS manifest is parsed; may fire again when subtitle `textTracks` attach. | Populate menus; read `event.detail.audioTracks` / `subtitleTracks`. |
+| **`fastpixaudiochange`** | User or `setAudioTrack` changed audio. | Refresh UI highlight. |
+| **`fastpixsubtitlechange`** | User or `setSubtitleTrack` / Off changed subtitles. | Refresh UI highlight. |
+| **`fastpixsubtitlecue`** | Active cue text updates. | Drive a **custom** React subtitle overlay (recommended with `hide-native-subtitles`). |
+
+**Active short only:** In this demo, `fastpixsubtitlecue` is listened to only when `isActive === true` (see below), so the console and React state are not flooded by off-screen shorts.
+
+### UI in this repo: three-dots menu + overlay
+
+- **Top bar (⋯)** – Shown only when the stream exposes **more than one audio** track and/or **at least one** subtitle track. The menu lists **Audio** and **Subtitles** (with an **Off** row for captions) and calls `setAudioTrack` / `setSubtitleTrack`.
+- **Custom subtitle pill** – Subscribes to `fastpixsubtitlecue`, updates local state, and renders a centered pill above the progress bar. With `hide-native-subtitles`, that pill is the visible captions layer.
+
+`App.tsx` passes **`isActive={i === activeIndex}`** into each `ShortItem` so subtitle cue handling and logging apply only to the visible short.
+
+### Working minimal pattern (React + ref to `fastpix-player`)
+
+```ts
+useEffect(() => {
+  const player = playerRef.current as any;
+  if (!player || !isActive) return;
+
+  const onCue = (e: Event) => {
+    const d = (e as CustomEvent).detail || {};
+    console.log("[fastpixsubtitlecue]", d);
+    setSubtitleText(d.text ?? "");
+  };
+
+  player.addEventListener("fastpixsubtitlecue", onCue);
+  return () => player.removeEventListener("fastpixsubtitlecue", onCue);
+}, [playbackId, isActive]);
+```
+
+Full project reference: **`AUDIO_SUBTITLE_TRACKS_API.md`** at the web-player repo root.
+
+---
+
+## Feed performance (windowed shorts + stable `playAt`)
+
+To avoid mounting every short’s `<fastpix-player>` at once:
+
+- **`App.tsx`** renders only a **window** of items around `activeIndex` (e.g. current ±2), each wrapped in an **absolutely positioned** slot at `top: i * 100vh` so scroll position still matches index `i`.
+- **`preload`** stays strict: `"auto"` for the active short, `"metadata"` for neighbors, `"none"` for others in the window.
+- **`playAt`** skips re-running play logic for the **same** index repeatedly (dedupe with `lastPlayIndexRef`) so you do not get play/pause flicker when scroll handlers fire multiple times.
+
+Optional: `App.tsx` logs **`[perf] ShortsApp first render`** and **`[perf] First short started playing`** (ms since module load) for quick checks in dev vs production (`npm run build && npm run preview`).
 
 ---
 
@@ -563,6 +660,10 @@ useEffect(() => {
   el.setAttribute("loop", "");
   el.setAttribute("disable-keyboard-controls", "");
   el.setAttribute("preload", preload);
+  el.setAttribute("hide-native-subtitles", "");
+  // Optional: el.setAttribute("disable-hidden-captions", "");
+  // Optional: el.setAttribute("default-audio-track", "French");
+  // Optional: el.setAttribute("default-subtitle-track", "English");
   el.style.width = "100%";
   el.style.height = "100%";
   el.style.objectFit = "cover";
@@ -626,6 +727,7 @@ For now, this example is a **reference implementation** for using the **web comp
 
 - How to **control the player via refs and methods**.
 - How to **read the underlying `video` element** when needed.
+- How to **switch audio and subtitle tracks** (`getAudioTracks`, `setSubtitleTrack`, `fastpixsubtitlecue`, etc.) — see **Audio & subtitle tracks** above.
 - How to **keep feed-level logic inside React** while delegating playback to FastPix.
 
 ---
