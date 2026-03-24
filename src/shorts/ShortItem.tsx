@@ -253,6 +253,14 @@ export const ShortItem: React.FC<ShortItemProps> = ({
           ? player.getSubtitleTracks()
           : []);
 
+      // eslint-disable-next-line no-console
+      console.log("[fastpixtracksready]", {
+        playbackId,
+        detail,
+        audioTracks: Array.isArray(aud) ? aud : [],
+        subtitleTracks: Array.isArray(subs) ? subs : [],
+      });
+
       setAudioTracks(Array.isArray(aud) ? aud : []);
       setSubtitleTracks(Array.isArray(subs) ? subs : []);
     };
@@ -272,7 +280,15 @@ export const ShortItem: React.FC<ShortItemProps> = ({
         (typeof player.getSubtitleTracks === "function"
           ? player.getSubtitleTracks()
           : []);
-      setSubtitleTracks(Array.isArray(tracks) ? tracks : []);
+      const resolvedTracks = Array.isArray(tracks) ? tracks : [];
+      setSubtitleTracks(resolvedTracks);
+
+      // Clear overlay when subtitles are turned Off so stale cue text disappears.
+      const hasCurrentTrack =
+        !!detail.currentTrack || resolvedTracks.some((t) => t?.isCurrent);
+      if (!hasCurrentTrack) {
+        setSubtitleText("");
+      }
     };
 
     player.addEventListener("fastpixtracksready", handleTracksReady as any);
@@ -311,8 +327,23 @@ export const ShortItem: React.FC<ShortItemProps> = ({
 
   const switchSubtitle = (labelOrNull: string | null) => {
     const player = playerRef.current as any;
-    if (!player?.setSubtitleTrack) return;
-    player.setSubtitleTrack(labelOrNull);
+    if (!player) return;
+
+    if (labelOrNull == null) {
+      if (typeof player.disableAllSubtitles === "function") {
+        player.disableAllSubtitles();
+      } else if (typeof player.setSubtitleTrack === "function") {
+        // Fallback for older SDKs.
+        player.setSubtitleTrack(null);
+      }
+      // Optimistically clear custom overlay on "Off" click.
+      setSubtitleText("");
+      return;
+    }
+
+    if (typeof player.setSubtitleTrack === "function") {
+      player.setSubtitleTrack(labelOrNull);
+    }
   };
 
   const likeCount = liked

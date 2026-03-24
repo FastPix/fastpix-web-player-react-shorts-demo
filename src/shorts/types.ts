@@ -13,6 +13,8 @@ export interface FastPixPlayerElement extends HTMLElement {
   pause?: () => void;
   mute?: () => void;
   unmute?: () => void;
+  setSubtitleTrack?: (track: string | number | null) => void;
+  disableAllSubtitles?: () => void;
   destroy?: () => void;
 }
 
@@ -35,7 +37,7 @@ export const SHORTS_FEED: ShortMeta[] = [
     shares: "543",
   },
   {
-    id: "55f36f6a-91fe-439e-8993-04619136299d",
+    id: "e1f32b9b-ac57-4582-a7c5-90aa6f96baac",
     creator: "prima_music",
     title: "Telugu Prima 🎶 | Feel the vibe",
     likes: "21K",
