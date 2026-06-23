@@ -1,7 +1,7 @@
 {
   "name": "fastpix-player-react-shorts-app",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fastpix/fp-player": "^1.0.15",
+    "@fastpix/fp-player": "^1.0.20",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

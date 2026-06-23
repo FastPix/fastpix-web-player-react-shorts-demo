@@ -1,16 +1,28 @@
-import type React from "react";
 import { useRef, useEffect, useState, useCallback } from "react";
 import "@fastpix/fp-player";
 import {
   SHORTS_FEED,
   type FastPixPlayerElement,
+  type FullscreenDocument,
+  type FullscreenElement,
   type ShortMeta,
 } from "./shorts/types";
 import { ShortItem } from "./shorts/ShortItem";
 
 const APP_START_MS = performance.now();
 
-const WHEEL_IDLE_MS     = 160;
+const WHEEL_IDLE_MS = 160;
+
+// Eagerly buffer the active short, prefetch metadata for its neighbours, and
+// leave everything else untouched.
+function getPreloadFor(
+  index: number,
+  activeIndex: number,
+): "none" | "metadata" | "auto" {
+  if (index === activeIndex) return "auto";
+  if (Math.abs(index - activeIndex) === 1) return "metadata";
+  return "none";
+}
 
 // ── ShortsApp ─────────────────────────────────────────────────────────────────
 export default function ShortsApp() {
@@ -36,8 +48,14 @@ export default function ShortsApp() {
   const loggedFirstPlayRef = useRef(false);
   const lastPlayIndexRef = useRef<number | null>(null);
 
-  activeIndexRef.current = activeIndex;
-  isMutedRef.current      = isMuted;
+  // Keep refs in sync with state so event handlers read the latest values
+  // without being recreated on every change.
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   const markInteracted = useCallback(() => {
     if (hasUserInteractedRef.current) return;
@@ -48,6 +66,19 @@ export default function ShortsApp() {
     (index: number, player: FastPixPlayerElement | null) => {
       if (player) playerRefsByIndex.current[index] = player;
       else delete playerRefsByIndex.current[index];
+    },
+    [],
+  );
+
+  // Start playback, retrying once on the next frame if the browser rejects
+  // the initial play() (e.g. transient autoplay restrictions).
+  const playWithRetry = useCallback(
+    (player: FastPixPlayerElement, index: number) => {
+      const retry = () => {
+        if (activeIndexRef.current === index) player.play?.()?.catch?.(() => {});
+      };
+      const playResult = player.play?.() as Promise<void> | undefined;
+      playResult?.catch?.(() => requestAnimationFrame(retry));
     },
     [],
   );
@@ -68,27 +99,19 @@ export default function ShortsApp() {
       });
       const player = playerRefsByIndex.current[index];
       if (!player) return;
-    if (resetTime && player.video) player.video.currentTime = 0;
-    // Before any user gesture: keep muted (autoplay policy). After: use user's current mute preference (persists across swipes).
-      if (!hasUserInteractedRef.current) {
+      if (resetTime && player.video) player.video.currentTime = 0;
+      // Before any user gesture: keep muted (autoplay policy). After: use the
+      // user's current mute preference (persists across swipes).
+      if (!hasUserInteractedRef.current || isMutedRef.current) {
         player.mute?.();
       } else {
-        isMutedRef.current ? player.mute?.() : player.unmute?.();
+        player.unmute?.();
       }
-      const playResult = player.play?.();
-      if ((playResult as Promise<void> | undefined)?.catch) {
-        (playResult as Promise<void>).catch(() => {
-          requestAnimationFrame(() => {
-            if (activeIndexRef.current === index)
-              player.play?.()?.catch?.(() => {});
-          });
-        });
-      }
+      playWithRetry(player, index);
 
       if (!loggedFirstPlayRef.current) {
         loggedFirstPlayRef.current = true;
         const now = performance.now();
-        // eslint-disable-next-line no-console
         console.log(
           "[perf] First short started playing:",
           (now - APP_START_MS).toFixed(1),
@@ -100,7 +123,7 @@ export default function ShortsApp() {
 
       lastPlayIndexRef.current = index;
     },
-    [],
+    [playWithRetry],
   );
 
   const handleMuteToggle = useCallback(() => {
@@ -109,29 +132,30 @@ export default function ShortsApp() {
     if (isMuted) {
       markInteracted();
       player.unmute?.();
+      // Unmuting a muted-autoplaying video makes the browser re-check the
+      // autoplay policy and it often pauses. We're inside a user gesture here,
+      // so an explicit play() is allowed and keeps it running — with sound.
+      playWithRetry(player, activeIndexRef.current);
       setIsMuted(false);
     } else {
       player.mute?.();
       setIsMuted(true);
     }
-  }, [markInteracted, isMuted]);
+  }, [markInteracted, isMuted, playWithRetry]);
 
   // Fullscreen the scroll container so scrolling works in fullscreen and progress bar stays visible.
   const handleRequestFullscreen = useCallback(() => {
-    const el = scrollRef.current;
+    const el = scrollRef.current as FullscreenElement | null;
     if (!el) return;
-    try {
-      const docAny = document as any;
-      const isFullscreen =
-        document.fullscreenElement ?? docAny.webkitFullscreenElement;
-      if (isFullscreen) {
-        (document.exitFullscreen || docAny.webkitExitFullscreen)?.call(document);
-      } else {
-        (el.requestFullscreen || (el as any).webkitRequestFullscreen)?.call(el);
-      }
-    } catch (err) {
+    const doc = document as FullscreenDocument;
+    const isFullscreen = doc.fullscreenElement ?? doc.webkitFullscreenElement;
+    const action = isFullscreen
+      ? (doc.exitFullscreen || doc.webkitExitFullscreen)?.call(doc)
+      : (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+    // The standard APIs return a promise; swallow rejections (e.g. unsupported).
+    Promise.resolve(action).catch((err) => {
       console.warn("Fullscreen not supported", err);
-    }
+    });
   }, []);
 
   // Mute preference persists across swipes; we do not reset isMuted when activeIndex changes.
@@ -147,7 +171,7 @@ export default function ShortsApp() {
     cancelAnimation.current?.();
 
     const from = el.scrollTop;
-    const to   = i * window.innerHeight;
+    const to   = i * globalThis.innerHeight;
 
     activeIndexRef.current = i;
     setActiveIndex(i);
@@ -170,7 +194,7 @@ export default function ShortsApp() {
   // Share: build link to this short, use Web Share API or copy to clipboard
   const handleShare = useCallback(
     (playbackId: string, metadata: ShortMeta) => {
-    const url = `${window.location.origin}${window.location.pathname}${window.location.search}#short/${playbackId}`;
+    const url = `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}#short/${playbackId}`;
     const title = metadata?.title ? `${metadata.title} | @${metadata?.creator ?? ""}` : "Short";
     const text = metadata?.title ?? title;
       if (typeof navigator.share === "function") {
@@ -194,7 +218,7 @@ export default function ShortsApp() {
     scrollDebounce.current = setTimeout(() => {
       const el = scrollRef.current;
       if (!el) return;
-      const i = Math.round(el.scrollTop / window.innerHeight);
+      const i = Math.round(el.scrollTop / globalThis.innerHeight);
       const clamped = Math.max(0, Math.min(i, SHORTS_FEED.length - 1));
       if (clamped === activeIndexRef.current) return;
       activeIndexRef.current = clamped;
@@ -205,8 +229,6 @@ export default function ShortsApp() {
 
   // ── Wheel: one gesture = one video ───────────────────────────────────────────
   const handleWheel = useCallback((e: WheelEvent) => {
-    // e.preventDefault();
-
     if (wheelIdleTimer.current) clearTimeout(wheelIdleTimer.current);
     wheelIdleTimer.current = setTimeout(() => {
       hasFiredThisGesture.current = false;
@@ -226,8 +248,11 @@ export default function ShortsApp() {
     wheelSnapTo(activeIndexRef.current + (e.key === "ArrowDown" ? 1 : -1));
   }, [wheelSnapTo]);
 
+  // Tap anywhere on the feed background (outside the player) to resume playback.
+  // Attached imperatively in an effect, mirroring the wheel/scroll/keydown
+  // listeners below; keyboard users navigate via the arrow keys (handleKeyDown).
   const handleContainerClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+    (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest?.("fastpix-player")) return;
       playAt(activeIndexRef.current, { resetTime: false });
@@ -238,7 +263,6 @@ export default function ShortsApp() {
   // ── Effects ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     const now = performance.now();
-    // eslint-disable-next-line no-console
     console.log(
       "[perf] ShortsApp first render:",
       (now - APP_START_MS).toFixed(1),
@@ -248,10 +272,10 @@ export default function ShortsApp() {
   useEffect(() => {
     const fn = () => {
       const el = scrollRef.current;
-      if (el) el.scrollTop = activeIndexRef.current * window.innerHeight;
+      if (el) el.scrollTop = activeIndexRef.current * globalThis.innerHeight;
     };
-    window.addEventListener("resize", fn);
-    return () => window.removeEventListener("resize", fn);
+    globalThis.addEventListener("resize", fn);
+    return () => globalThis.removeEventListener("resize", fn);
   }, []);
 
   useEffect(() => {
@@ -269,8 +293,15 @@ export default function ShortsApp() {
   }, [handleScroll]);
 
   useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener("click", handleContainerClick);
+    return () => el.removeEventListener("click", handleContainerClick);
+  }, [handleContainerClick]);
+
+  useEffect(() => {
+    globalThis.addEventListener("keydown", handleKeyDown);
+    return () => globalThis.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
   useEffect(() => () => {
@@ -300,7 +331,6 @@ export default function ShortsApp() {
         <div
           ref={scrollRef}
           className="shorts-scroll"
-          onClick={handleContainerClick}
           style={{
             width: "100%",
             height: "100%",
@@ -341,13 +371,7 @@ export default function ShortsApp() {
                       playbackId={short.id}
                       metadata={short}
                       itemIndex={i}
-                      preload={
-                        i === activeIndex
-                          ? "auto"
-                          : i === activeIndex + 1 || i === activeIndex - 1
-                          ? "metadata"
-                          : "none"
-                      }
+                      preload={getPreloadFor(i, activeIndex)}
                       registerPlayer={registerPlayer}
                       onToggleMute={handleMuteToggle}
                       isMuted={isMuted}
@@ -405,9 +429,9 @@ export default function ShortsApp() {
         display: "flex", flexDirection: "column", gap: 6,
         pointerEvents: "none", zIndex: 10,
       }}>
-        {SHORTS_FEED.map((_, i) => (
-          <div key={i} style={{
-            width: i === activeIndex ? 4 : 4,
+        {SHORTS_FEED.map((short, i) => (
+          <div key={short.id} style={{
+            width: 4,
             height: i === activeIndex ? 24 : 8,
             borderRadius: 4,
             background: i === activeIndex ? "#b16cea" : "rgba(255,255,255,0.35)",

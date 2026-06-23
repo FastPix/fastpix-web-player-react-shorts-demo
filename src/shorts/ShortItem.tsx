@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionBtn } from "./ActionButton";
 import { incrementLabel } from "./utils";
-import type { FastPixPlayerElement, ShortMeta } from "./types";
-
-type TrackInfo = {
-  id: number;
-  label: string;
-  language?: string;
-  isDefault: boolean;
-  isCurrent: boolean;
-};
+import type {
+  FastPixPlayerElement,
+  FullscreenDocument,
+  ShortMeta,
+  SubtitleCueDetail,
+  TrackChangeDetail,
+  TrackInfo,
+  TracksReadyDetail,
+} from "./types";
 
 export type ShortItemProps = {
   playbackId: string;
@@ -52,6 +52,9 @@ export const ShortItem: React.FC<ShortItemProps> = ({
   const [subtitleTracks, setSubtitleTracks] = useState<TrackInfo[]>([]);
   const [showTrackMenu, setShowTrackMenu] = useState(false);
   const [subtitleText, setSubtitleText] = useState("");
+  // True while the player's seek-thumbnail (spritesheet) preview tile is on
+  // screen — used to fade out the creator overlay so the preview isn't hidden.
+  const [previewActive, setPreviewActive] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -69,7 +72,6 @@ export const ShortItem: React.FC<ShortItemProps> = ({
     // Mirror demo behavior: keep native subtitles hidden and, optionally,
     // start with subtitles Off while still emitting fastpixsubtitlecue.
     el.setAttribute("hide-native-subtitles", "");
-    // el.setAttribute("disable-hidden-captions", "");
     el.style.width = "100%";
     el.style.height = "100%";
     el.style.objectFit = "cover";
@@ -78,14 +80,44 @@ export const ShortItem: React.FC<ShortItemProps> = ({
     if (playerRef.current?.video)
       playerRef.current.video.setAttribute("playback-rate", "3");
     registerPlayer(itemIndex, el);
+
+    // The player renders its seek-thumbnail (spritesheet) preview inside an
+    // open shadow root and tags the tile with a "show" class while visible.
+    // Watch for it so we can fade our creator overlay out of the way — the
+    // overlay can't be interleaved with the shadow-DOM tile via z-index alone.
+    let previewObserver: MutationObserver | null = null;
+    let observeRaf: number | null = null;
+    let observeTries = 0;
+    const attachPreviewObserver = () => {
+      const root = el.shadowRoot;
+      if (!root) {
+        if (observeTries++ < 30) observeRaf = requestAnimationFrame(attachPreviewObserver);
+        return;
+      }
+      const sync = () => {
+        const tile = root.querySelector(".thumbnailSeeking");
+        setPreviewActive(!!tile && tile.classList.contains("show"));
+      };
+      previewObserver = new MutationObserver(sync);
+      previewObserver.observe(root, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+      sync();
+    };
+    attachPreviewObserver();
+
     return () => {
+      if (observeRaf != null) cancelAnimationFrame(observeRaf);
+      previewObserver?.disconnect();
       registerPlayer(itemIndex, null);
       try {
         if (typeof el.destroy === "function") el.destroy();
       } catch {
         // ignore
       }
-      if (container.contains(el)) container.removeChild(el);
+      el.remove();
       playerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,22 +132,16 @@ export const ShortItem: React.FC<ShortItemProps> = ({
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      const docAny = document as any;
+      const doc = document as FullscreenDocument;
       setIsFullscreen(
-        !!document.fullscreenElement || !!docAny.webkitFullscreenElement,
+        !!doc.fullscreenElement || !!doc.webkitFullscreenElement,
       );
     };
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    document.addEventListener(
-      "webkitfullscreenchange" as any,
-      onFullscreenChange as any,
-    );
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
     return () => {
       document.removeEventListener("fullscreenchange", onFullscreenChange);
-      document.removeEventListener(
-        "webkitfullscreenchange" as any,
-        onFullscreenChange as any,
-      );
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
     };
   }, []);
 
@@ -136,7 +162,7 @@ export const ShortItem: React.FC<ShortItemProps> = ({
 
   // Log fastpixsubtitlecue and keep a styled overlay in sync — only for the active short
   useEffect(() => {
-    const player = playerRef.current as any;
+    const player = playerRef.current;
     if (!player || !isActive) {
       // If this short is not active, clear any old text and skip attaching.
       setSubtitleText("");
@@ -144,28 +170,24 @@ export const ShortItem: React.FC<ShortItemProps> = ({
     }
 
     const handleCue = (e: Event) => {
-      const detail = (e as CustomEvent<any>).detail || {};
-      const text: string = detail.text ?? "";
-      const lang: string | undefined = detail.language;
-      const startTime: number | undefined = detail.startTime;
-      const endTime: number | undefined = detail.endTime;
+      const detail = (e as CustomEvent<SubtitleCueDetail>).detail ?? {};
+      const text = detail.text ?? "";
 
       // Helpful log for debugging / QA
-      // eslint-disable-next-line no-console
       console.log("[fastpixsubtitlecue]", {
         text,
-        language: lang,
-        startTime,
-        endTime,
+        language: detail.language,
+        startTime: detail.startTime,
+        endTime: detail.endTime,
         playbackId,
       });
 
-      setSubtitleText(text || "");
+      setSubtitleText(text);
     };
 
-    player.addEventListener("fastpixsubtitlecue", handleCue as any);
+    player.addEventListener("fastpixsubtitlecue", handleCue);
     return () => {
-      player.removeEventListener("fastpixsubtitlecue", handleCue as any);
+      player.removeEventListener("fastpixsubtitlecue", handleCue);
     };
   }, [playbackId, isActive]);
 
@@ -195,7 +217,7 @@ export const ShortItem: React.FC<ShortItemProps> = ({
 
     const paint = () => {
       const duration = vid.duration;
-      if (duration > 0 && isFinite(duration)) {
+      if (duration > 0 && Number.isFinite(duration)) {
         setProgress((vid.currentTime / duration) * 100);
       } else {
         setProgress(0);
@@ -208,7 +230,7 @@ export const ShortItem: React.FC<ShortItemProps> = ({
       rafId = requestAnimationFrame(loop);
     };
     const startRAF = () => {
-      if (rafId == null) rafId = requestAnimationFrame(loop);
+      rafId ??= requestAnimationFrame(loop);
     };
     const stopRAF = () => {
       if (rafId != null) {
@@ -239,21 +261,17 @@ export const ShortItem: React.FC<ShortItemProps> = ({
 
   // Track switching: read available tracks and keep state in sync with FastPix events.
   useEffect(() => {
-    const player = playerRef.current as any;
+    const player = playerRef.current;
     if (!player) return;
 
-    const handleTracksReady = (e: Event) => {
-      const detail = (e as CustomEvent<any>).detail || {};
-      const aud: TrackInfo[] =
-        detail.audioTracks ??
-        (typeof player.getAudioTracks === "function" ? player.getAudioTracks() : []);
-      const subs: TrackInfo[] =
-        detail.subtitleTracks ??
-        (typeof player.getSubtitleTracks === "function"
-          ? player.getSubtitleTracks()
-          : []);
+    const readAudioTracks = () => player.getAudioTracks?.() ?? [];
+    const readSubtitleTracks = () => player.getSubtitleTracks?.() ?? [];
 
-      // eslint-disable-next-line no-console
+    const handleTracksReady = (e: Event) => {
+      const detail = (e as CustomEvent<TracksReadyDetail>).detail ?? {};
+      const aud = detail.audioTracks ?? readAudioTracks();
+      const subs = detail.subtitleTracks ?? readSubtitleTracks();
+
       console.log("[fastpixtracksready]", {
         playbackId,
         detail,
@@ -266,20 +284,14 @@ export const ShortItem: React.FC<ShortItemProps> = ({
     };
 
     const handleAudioChange = (e: Event) => {
-      const detail = (e as CustomEvent<any>).detail || {};
-      const tracks: TrackInfo[] =
-        detail.tracks ??
-        (typeof player.getAudioTracks === "function" ? player.getAudioTracks() : []);
+      const detail = (e as CustomEvent<TrackChangeDetail>).detail ?? {};
+      const tracks = detail.tracks ?? readAudioTracks();
       setAudioTracks(Array.isArray(tracks) ? tracks : []);
     };
 
     const handleSubtitleChange = (e: Event) => {
-      const detail = (e as CustomEvent<any>).detail || {};
-      const tracks: TrackInfo[] =
-        detail.tracks ??
-        (typeof player.getSubtitleTracks === "function"
-          ? player.getSubtitleTracks()
-          : []);
+      const detail = (e as CustomEvent<TrackChangeDetail>).detail ?? {};
+      const tracks = detail.tracks ?? readSubtitleTracks();
       const resolvedTracks = Array.isArray(tracks) ? tracks : [];
       setSubtitleTracks(resolvedTracks);
 
@@ -291,27 +303,20 @@ export const ShortItem: React.FC<ShortItemProps> = ({
       }
     };
 
-    player.addEventListener("fastpixtracksready", handleTracksReady as any);
-    player.addEventListener("fastpixaudiochange", handleAudioChange as any);
-    player.addEventListener("fastpixsubtitlechange", handleSubtitleChange as any);
+    player.addEventListener("fastpixtracksready", handleTracksReady);
+    player.addEventListener("fastpixaudiochange", handleAudioChange);
+    player.addEventListener("fastpixsubtitlechange", handleSubtitleChange);
 
     // Initial snapshot in case events fired before React effect attached.
-    if (typeof player.getAudioTracks === "function") {
-      const aud = player.getAudioTracks();
-      if (Array.isArray(aud) && aud.length) setAudioTracks(aud);
-    }
-    if (typeof player.getSubtitleTracks === "function") {
-      const subs = player.getSubtitleTracks();
-      if (Array.isArray(subs) && subs.length) setSubtitleTracks(subs);
-    }
+    const initialAudio = readAudioTracks();
+    if (initialAudio.length) setAudioTracks(initialAudio);
+    const initialSubs = readSubtitleTracks();
+    if (initialSubs.length) setSubtitleTracks(initialSubs);
 
     return () => {
-      player.removeEventListener("fastpixtracksready", handleTracksReady as any);
-      player.removeEventListener("fastpixaudiochange", handleAudioChange as any);
-      player.removeEventListener(
-        "fastpixsubtitlechange",
-        handleSubtitleChange as any,
-      );
+      player.removeEventListener("fastpixtracksready", handleTracksReady);
+      player.removeEventListener("fastpixaudiochange", handleAudioChange);
+      player.removeEventListener("fastpixsubtitlechange", handleSubtitleChange);
     };
   }, [playbackId]);
 
@@ -320,13 +325,11 @@ export const ShortItem: React.FC<ShortItemProps> = ({
   const currentSubtitle = subtitleTracks.find((t) => t.isCurrent) ?? null;
 
   const switchAudio = (label: string) => {
-    const player = playerRef.current as any;
-    if (!player?.setAudioTrack) return;
-    player.setAudioTrack(label);
+    playerRef.current?.setAudioTrack?.(label);
   };
 
   const switchSubtitle = (labelOrNull: string | null) => {
-    const player = playerRef.current as any;
+    const player = playerRef.current;
     if (!player) return;
 
     if (labelOrNull == null) {
@@ -423,7 +426,10 @@ export const ShortItem: React.FC<ShortItemProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 const vid = playerRef.current?.video;
-                if (vid) vid.paused ? vid.play() : vid.pause();
+                if (vid) {
+                  if (vid.paused) vid.play();
+                  else vid.pause();
+                }
               }}
               aria-label={isPlaying ? "Pause" : "Play"}
               style={topBarBtnStyle}
@@ -564,7 +570,6 @@ export const ShortItem: React.FC<ShortItemProps> = ({
                       gap: 6,
                       pointerEvents: "auto",
                     }}
-                    onClick={(e) => e.stopPropagation()}
                   >
                     {hasAudioChoices && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -689,7 +694,7 @@ export const ShortItem: React.FC<ShortItemProps> = ({
           </div>
         </div>
 
-        {/* Creator + title */}
+        {/* Creator + title — fades out while the spritesheet preview shows */}
         <div
           style={{
             position: "absolute",
@@ -698,6 +703,9 @@ export const ShortItem: React.FC<ShortItemProps> = ({
             right: 72,
             zIndex: 2,
             userSelect: "none",
+            opacity: previewActive ? 0 : 1,
+            transition: "opacity 0.15s ease",
+            pointerEvents: previewActive ? "none" : undefined,
           }}
         >
           <div
@@ -733,7 +741,7 @@ export const ShortItem: React.FC<ShortItemProps> = ({
                   flexShrink: 0,
                 }}
               >
-                {metadata.creator[0].toUpperCase()}
+                {metadata.creator.charAt(0).toUpperCase()}
               </div>
               <span
                 style={{

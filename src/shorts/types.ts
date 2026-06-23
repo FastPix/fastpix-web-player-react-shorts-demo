@@ -7,6 +7,14 @@ export type ShortMeta = {
   shares: string;
 };
 
+export type TrackInfo = {
+  id: number;
+  label: string;
+  language?: string;
+  isDefault: boolean;
+  isCurrent: boolean;
+};
+
 export interface FastPixPlayerElement extends HTMLElement {
   video?: HTMLVideoElement;
   play?: () => Promise<void> | void;
@@ -14,9 +22,40 @@ export interface FastPixPlayerElement extends HTMLElement {
   mute?: () => void;
   unmute?: () => void;
   setSubtitleTrack?: (track: string | number | null) => void;
+  setAudioTrack?: (label: string) => void;
   disableAllSubtitles?: () => void;
+  getAudioTracks?: () => TrackInfo[];
+  getSubtitleTracks?: () => TrackInfo[];
   destroy?: () => void;
 }
+
+// Detail payloads emitted by the FastPix player custom events.
+export type SubtitleCueDetail = {
+  text?: string;
+  language?: string;
+  startTime?: number;
+  endTime?: number;
+};
+
+export type TracksReadyDetail = {
+  audioTracks?: TrackInfo[];
+  subtitleTracks?: TrackInfo[];
+};
+
+export type TrackChangeDetail = {
+  tracks?: TrackInfo[];
+  currentTrack?: TrackInfo | null;
+};
+
+// Vendor-prefixed fullscreen APIs are not in the standard lib DOM typings.
+export type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => void;
+};
+
+export type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => void;
+};
 
 // Demo feed – replace with real API data in your app.
 export const SHORTS_FEED: ShortMeta[] = [
