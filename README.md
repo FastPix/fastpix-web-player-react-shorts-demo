@@ -1,4 +1,15 @@
-# FastPix Shorts Demo – React 19 + ESM
+# Build a shorts video feed in React 19 with the FastPix player
+
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![FastPix player](https://img.shields.io/badge/FastPix-web%20player-0E7C66)](https://fastpix.com/)
+
+A working reference implementation - a cookbook, not a black box - for building a vertical, full-screen **shorts video feed** (Reels / TikTok-style) in **React 19 + Vite** on top of the web-based **FastPix player** (`<fastpix-player>`). It shows scroll-snapping between videos, autoplay of the active short, per-short and feed-level mute, a custom seekbar and controls, audio/subtitle track switching, and windowed rendering for performance - while FastPix handles HLS/DASH streaming under the hood.
+
+**Works with:** React 19 · Vite · TypeScript · FastPix web player (`<fastpix-player>`) · HLS / DASH · vertical 9:16 shorts
+
+📖 **FastPix docs:** https://fastpix.com/docs/web-player/build-a-shorts-feed-with-react &nbsp;·&nbsp; 🚀 **Free account + playback IDs:** https://dashboard.fastpix.com
 
 This `react-shorts-app` project is a **shorts-style demo** that shows how to use the web-based FastPix player in a React 19 app.
 
@@ -6,6 +17,20 @@ This `react-shorts-app` project is a **shorts-style demo** that shows how to use
 
 `package.json` still lists **`@fastpix/fp-player`** for reference; ensure the runtime bundle you load matches the features you document (audio/subtitle switching, `fastpixsubtitlecue`, etc.).
 
+<br />
+
+## What this demo shows
+
+- Vertical, full-screen **scroll-snapping** feed (wheel, touch, and keyboard).
+- **Autoplay** the active short while pausing and muting the rest.
+- Feed-level **mute / unmute** with autoplay-policy handling.
+- A **custom seekbar** and custom controls layered on the FastPix player.
+- **Audio and subtitle/caption track switching**, plus custom caption rendering.
+- **Windowed rendering** (only mount nearby shorts) for performance.
+- Fullscreen, like / follow / share, and creator UI - all owned by React.
+- Reading the underlying `HTMLVideoElement` while FastPix owns streaming.
+
+<br />
 
 ## Prerequisites
 
@@ -16,6 +41,8 @@ To run or adapt this demo you should have:
 - Access to **FastPix vertical videos (9:16)** with:
   - A FastPix **playback ID** for each short.
   - Assets encoded for vertical viewing – this demo assumes a portrait/shorts layout only.
+
+<br />
 
 ### Feed JSON format (universal)
 
@@ -53,8 +80,7 @@ All playback in the demo ultimately comes from `short.id` being passed to:
 
 So once you wire your own JSON feed into `SHORTS_FEED` (or fetch it and pass it as props), the shorts player will work with your vertical videos.
 
----
-
+<br />
 
 ## Quick start
 
@@ -86,7 +112,7 @@ It focuses on **programmatic control** of the player and a **shorts feed UI**:
 - React drives **which short is active**, **mute state**, **scroll snapping**, and **UI controls**.
 - The player instance exposes convenience methods (`play`, `pause`, `mute`, `unmute`) and an underlying `HTMLVideoElement` via `playerRef.current.video`.
 
----
+<br />
 
 ## What FastPix handles vs what this app handles
 
@@ -137,7 +163,7 @@ Use this repo as a **working reference implementation**: you can copy the patter
 
 You are encouraged to re‑use or adapt this code in your own GitHub projects.
 
----
+<br />
 
 ## Accessing the underlying `video` element
 
@@ -189,11 +215,13 @@ We also use `playerRef.current.video` for:
 
 This keeps **visual progress and preloading** under app control while the streaming logic stays in FastPix.
 
----
+<br />
 
 ## Audio & subtitle tracks (this demo)
 
 The shorts demo wires **multi-track audio** and **subtitle / caption** switching on top of the FastPix web component. It uses the same ideas as the standalone HTML demo and the project’s `AUDIO_SUBTITLE_TRACKS_API.md` (methods, events, attributes).
+
+<br />
 
 ### Player attributes used in `ShortItem.tsx`
 
@@ -220,6 +248,8 @@ el.setAttribute("hide-native-subtitles", "");
 // el.setAttribute("default-subtitle-track", "English");
 ```
 
+<br />
+
 ### Programmatic API (on the custom element)
 
 After the manifest / text tracks are ready, you can call:
@@ -234,6 +264,8 @@ After the manifest / text tracks are ready, you can call:
 
 `TrackInfo` objects include `id`, `label`, optional `language`, `isDefault`, `isCurrent`. Prefer **`label`** for `setAudioTrack` / `setSubtitleTrack`; use **`language`** for persisting user preference across assets.
 
+<br />
+
 ### Events
 
 | Event | When | Typical use |
@@ -245,12 +277,16 @@ After the manifest / text tracks are ready, you can call:
 
 **Active short only:** In this demo, `fastpixsubtitlecue` is listened to only when `isActive === true` (see below), so the console and React state are not flooded by off-screen shorts.
 
+<br />
+
 ### UI in this repo: three-dots menu + overlay
 
 - **Top bar (⋯)** – Shown only when the stream exposes **more than one audio** track and/or **at least one** subtitle track. The menu lists **Audio** and **Subtitles** (with an **Off** row for captions) and calls `setAudioTrack` / `setSubtitleTrack`.
 - **Custom subtitle pill** – Subscribes to `fastpixsubtitlecue`, updates local state, and renders a centered pill above the progress bar. With `hide-native-subtitles`, that pill is the visible captions layer.
 
 `App.tsx` passes **`isActive={i === activeIndex}`** into each `ShortItem` so subtitle cue handling and logging apply only to the visible short.
+
+<br />
 
 ### Working minimal pattern (React + ref to `fastpix-player`)
 
@@ -272,7 +308,7 @@ useEffect(() => {
 
 Full project reference: **`AUDIO_SUBTITLE_TRACKS_API.md`** at the web-player repo root.
 
----
+<br />
 
 ## Feed performance (windowed shorts + stable `playAt`)
 
@@ -284,7 +320,7 @@ To avoid mounting every short’s `<fastpix-player>` at once:
 
 Optional: `App.tsx` logs **`[perf] ShortsApp first render`** and **`[perf] First short started playing`** (ms since module load) for quick checks in dev vs production (`npm run build && npm run preview`).
 
----
+<br />
 
 ## Player methods: `play`, `pause`, `mute`, `unmute`
 
@@ -301,6 +337,8 @@ const registerPlayer = useCallback((index: number, player: FastPixPlayerElement 
 ```
 
 `ShortItem` calls `registerPlayer(itemIndex, el)` when it mounts / unmounts.
+
+<br />
 
 ### Centralized playback control (`playAt`)
 
@@ -362,7 +400,7 @@ const playAt = useCallback(
 
 This separation keeps **streaming and player internals** inside FastPix while React orchestrates **feed behavior and UX**.
 
----
+<br />
 
 ## Hiding built‑in controls and using a custom seekbar
 
@@ -385,6 +423,8 @@ fastpix-player {
 }
 ```
 
+<br />
+
 ### Why we hide the built‑in controls
 
 - **Shorts-style UX** – We want the player frame to look like a shorts reel:
@@ -401,6 +441,8 @@ By setting the FastPix CSS variables to `none`, we **hide**:
 - Left-bottom overlays.
 
 But we **do not disable** the underlying logic – only the visuals.
+
+<br />
 
 ### Custom seekbar powered by FastPix
 
@@ -502,7 +544,7 @@ In other words:
   - Renders a custom progress bar synced to `video.currentTime`.
   - Owns the visual design of the seekbar, while leveraging FastPix’s tried-and-tested seeking behavior underneath.
 
----
+<br />
 
 ## Example: wiring buttons to `play`, `pause`, `mute`, `unmute`
 
@@ -531,6 +573,8 @@ const registerPlayer = useCallback(
 ```
 
 `ShortItem` calls `registerPlayer(itemIndex, el)` when its `fastpix-player` mounts.
+
+<br />
 
 ### 2. Central `playAt` and a mute toggle handler
 
@@ -592,6 +636,8 @@ const handleMuteToggle = useCallback(() => {
 }, [isMuted]);
 ```
 
+<br />
+
 ### 3. Hooking up actual buttons
 
 In the **ShortItem** overlay we use the underlying `video` element for play/pause:
@@ -642,7 +688,7 @@ const handlePauseClick = () => {
 
 This is the exact pattern the demo uses: **central refs + helpers in `App.tsx`**, and **small buttons in the UI** that call `play()`, `pause()`, `mute()`, and `unmute()` on the right FastPix instance.
 
----
+<br />
 
 ## Why `document.createElement("fastpix-player")` instead of JSX?
 
@@ -687,6 +733,8 @@ Instead of:
 // <fastpix-player playback-id={...} autoplay-shorts muted loop />
 ```
 
+<br />
+
 ### Reasons (React 19 + current web component)
 
 - **Lifecycle control for a shorts feed**  
@@ -730,7 +778,7 @@ For now, this example is a **reference implementation** for using the **web comp
 - How to **switch audio and subtitle tracks** (`getAudioTracks`, `setSubtitleTrack`, `fastpixsubtitlecue`, etc.) — see **Audio & subtitle tracks** above.
 - How to **keep feed-level logic inside React** while delegating playback to FastPix.
 
----
+<br />
 
 ## Custom buttons, fullscreen, and likes – how the UI works
 
@@ -790,7 +838,7 @@ The important idea: **FastPix provides playback and metadata; the app owns all U
 
 Feel free to copy/paste or adapt any of the source under `my-react-app/src` into your own projects. This demo is meant to be a **working cookbook**, not just a black‑box example.
 
----
+<br />
 
 ## Why we use `disable-keyboard-controls` in this app
 
@@ -825,3 +873,72 @@ With this setup:
 
 This makes keyboard behavior **predictable and app‑specific**, while still letting FastPix handle all media playback under the hood.
 
+<br />
+
+## Which FastPix player or demo for your platform
+
+Building the same experience elsewhere? FastPix has a player and reference demos for other platforms. (Only repositories confirmed to exist are linked here.)
+
+| Platform / use case | FastPix repo |
+|---|---|
+| Web player component (used in this demo) | [web-player-component](https://github.com/FastPix/web-player-component) |
+| Android player | [fastpix-android-player](https://github.com/FastPix/fastpix-android-player) |
+| iOS player | [iOS-player](https://github.com/FastPix/iOS-player) |
+| iOS player demo (SwiftUI) | [fastpix-ios-player-swiftui-demo](https://github.com/FastPix/fastpix-ios-player-swiftui-demo) |
+| Flutter player | [Flutter-Video-Player](https://github.com/FastPix/Flutter-Video-Player) |
+
+More repositories are available in the [FastPix organization](https://github.com/orgs/FastPix/repositories).
+
+<br />
+
+## FAQ
+
+**How do I build a Reels / TikTok-style shorts feed in React?**
+
+Use this repo as a reference. React 19 + Vite renders a vertical, scroll-snapping feed of `<fastpix-player>` cards, and FastPix handles the streaming. See "What FastPix handles vs what this app handles" and "Player methods: play, pause, mute, unmute".
+
+**How do I autoplay the active short and pause the others?**
+
+The app tracks the active index and calls `play()` on it while muting and pausing every other player, through a central `playAt` helper. See "Player methods: play, pause, mute, unmute".
+
+**How do I add vertical scroll-snapping between shorts?**
+
+Snapping (wheel, touch, and keyboard) is handled at the app level, and the player's own keyboard controls are turned off so the app owns navigation. See "Why we use disable-keyboard-controls in this app".
+
+**How do I mute or unmute a whole shorts feed?**
+
+A single feed-level mute flag is applied whenever the active short changes; a toggle handler unmutes on first user interaction (to respect autoplay policy). See "Player methods: play, pause, mute, unmute".
+
+**How do I switch audio or subtitle tracks?**
+
+Call `getAudioTracks` / `setAudioTrack` and `getSubtitleTracks` / `setSubtitleTrack` on the player, and listen to `fastpixtracksready`, `fastpixaudiochange`, and `fastpixsubtitlechange`. See "Audio & subtitle tracks (this demo)".
+
+**How do I render my own captions instead of the built-in ones?**
+
+Set the `hide-native-subtitles` attribute and subscribe to `fastpixsubtitlecue` to draw a custom caption overlay in React. See "Audio & subtitle tracks (this demo)".
+
+**Can I use `<fastpix-player>` as JSX instead of `document.createElement`?**
+
+React 19 can render it as JSX, but this demo uses `document.createElement` for deterministic mount/teardown in a virtualized feed. A first-class React `<FastPixPlayer />` wrapper is in progress. See "Why document.createElement(\"fastpix-player\") instead of JSX?".
+
+**How do I use my own video feed or backend?**
+
+Replace the `SHORTS_FEED` array in `src/shorts/types.ts` with your own JSON in the documented shape, using your FastPix playback IDs. See "Feed JSON format (universal)".
+
+**Where do I get FastPix playback IDs?**
+
+From your FastPix dashboard, after you upload or ingest your vertical (9:16) assets. See "Prerequisites".
+
+**Does it support HLS and DASH?**
+
+Yes. FastPix handles HLS/DASH playback, manifests, and buffering at the player level. See "What FastPix handles vs what this app handles".
+
+**How do I hide the built-in player controls and use a custom seekbar?**
+
+Set the FastPix CSS variables to `none` and use `--progress-bar-invisible: 1`, then render your own progress stripe synced to `video.currentTime`. See "Hiding built-in controls and using a custom seekbar".
+
+<br />
+
+## Documentation
+
+For player attributes, methods, and events, see the official [FastPix documentation](https://fastpix.com/docs/web-player/build-a-shorts-feed-with-react). For the audio and subtitle track APIs used here (methods, events, attributes), see **`AUDIO_SUBTITLE_TRACKS_API.md`** at the web-player repo root.
