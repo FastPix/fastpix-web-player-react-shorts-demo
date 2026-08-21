@@ -5,9 +5,9 @@
 [![Vite](https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![FastPix player](https://img.shields.io/badge/FastPix-web%20player-0E7C66)](https://fastpix.com/)
 
-A working reference implementation - a cookbook, not a black box - for building a vertical, full-screen **shorts video feed** (Reels / TikTok-style) in **React 19 + Vite** on top of the web-based **FastPix player** (`<fastpix-player>`). It shows scroll-snapping between videos, autoplay of the active short, per-short and feed-level mute, a custom seekbar and controls, audio/subtitle track switching, and windowed rendering for performance - while FastPix handles HLS/DASH streaming under the hood.
+A working reference implementation - a cookbook, not a black box - for building a vertical, full-screen **shorts video feed** (Reels / TikTok-style) in **React 19 + Vite** on top of the web-based **FastPix player** (`<fastpix-player>`). It shows scroll-snapping between videos, autoplay of the active short, per-short and feed-level mute, a custom seekbar and controls, audio/subtitle track switching, and windowed rendering for performance - while FastPix handles HLS (.m3u8) streaming under the hood.
 
-**Works with:** React 19 · Vite · TypeScript · FastPix web player (`<fastpix-player>`) · HLS / DASH · vertical 9:16 shorts
+**Works with:** React 19 · Vite · TypeScript · FastPix web player (`<fastpix-player>`) · HLS (.m3u8) · vertical 9:16 shorts
 
 📖 **FastPix docs:** https://fastpix.com/docs/web-player/build-a-shorts-feed-with-react &nbsp;·&nbsp; 🚀 **Free account + playback IDs:** https://dashboard.fastpix.com
 
@@ -119,7 +119,7 @@ It focuses on **programmatic control** of the player and a **shorts feed UI**:
 At a high level:
 
 - **FastPix (player level)** – implemented in `@fastpix/fp-player` and configured via **attributes + CSS variables**:
-  - HLS/DASH playback, manifest fetching, buffering, error handling.
+  - HLS (m3u8) playback, manifest fetching, buffering, error handling.
   - Track selection (audio, captions), DRM, thumbnails, ads/shoppable integrations.
   - **Attributes we set in code**:
     - `playback-id` – which vertical asset to play (1:1 with your feed JSON `id`).
@@ -387,7 +387,7 @@ const playAt = useCallback(
 
 **What FastPix handles:**
 
-- HLS/DASH streaming, manifests, network logic.
+- HLS (m3u8) streaming, manifests, network logic.
 - Thumbnails, captions, audio tracks, quality selection.
 - Keyboard shortcuts (when not disabled), volume persistence, ads/shoppable integrations, etc.
 
@@ -929,9 +929,9 @@ Replace the `SHORTS_FEED` array in `src/shorts/types.ts` with your own JSON in t
 
 From your FastPix dashboard, after you upload or ingest your vertical (9:16) assets. See "Prerequisites".
 
-**Does it support HLS and DASH?**
+**Does it support HLS?**
 
-Yes. FastPix handles HLS/DASH playback, manifests, and buffering at the player level. See "What FastPix handles vs what this app handles".
+Yes. FastPix handles HLS (m3u8) playback, manifests, and buffering at the player level.
 
 **How do I hide the built-in player controls and use a custom seekbar?**
 
